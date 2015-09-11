@@ -30,11 +30,11 @@ import argparse
 import copy
 import queue
 import threading
-import json
 
 parser = argparse.ArgumentParser(description='Receives Wireless BBQ Thermometer Telegrams via RF-Receiver')
 parser.add_argument('--html', nargs='?', const='maverick.html', help='Writes a HTML file')
 parser.add_argument('--json', nargs='?', const='maverick.json', help='Writes a JSON file')
+parser.add_argument('--sqlite', nargs='?', const='maverick.sqlite', help='Writes to an SQLite Database')
 parser.add_argument('--debug', action='store_true', help='Generates additional debugging Output')
 parser.add_argument('--pin', default=4, type=int, help='Sets the Pin number')
 parser.add_argument('--nosync', action='store_true', help='Always register new IDs')
@@ -278,11 +278,14 @@ def worker():
             html_queue.put((item_time, chksum_is, type, temp1, temp2))
          if options.json != None:
             json_queue.put((item_time, chksum_is, type, temp1, temp2))
+         if options.sqlite != None:
+            sqlite_queue.put((item_time, chksum_is, type, temp1, temp2))
          if options.verbose:
             print(time.strftime('%c:',time.localtime(item_time)),type, '-', chksum_is, '- Temperatur 1:', temp1, unit, 'Temperatur 2:', temp2, unit)
          if options.debug:
             print('raw:', item)
             print('hex', bitlist_to_hexlist(item))
+      packet_queue.task_done()
 
 def json_writer():
    # schreibt ein JSON-Logfile
@@ -311,6 +314,18 @@ def html_writer():
       html_file.flush()
       html_queue.task_done()
 
+def sqlite_writer():
+   # speichert die Empfangenen Daten in eine SQlite Datei
+   sqlite_conn = sqlite3.connect(options.sqlite)
+   sqlite_c = sqlite_conn.cursor()
+   sqlite_c.execute('''CREATE TABLE IF NOT EXISTS maverick
+             (date integer, type text, id integer, temperature_1 real, temperature_2 real)''')
+   while True:
+      item_time, chksum_is, type, temp1, temp2 =  sqlite_queue.get()
+      sqlite_c.execute("INSERT INTO maverick VALUES (?, ?, ?, ?, ?)", (int(item_time), type,  chksum_is, temp1, temp2))
+      sqlite_conn.commit()
+      sqlite_queue.task_done()
+
 pi = pigpio.pi() # connect to local Pi
 oldtick = pi.get_current_tick()
 pi.set_mode(options.pin, pigpio.INPUT)
@@ -324,10 +339,18 @@ if options.html != None:
    html_writer_worker.start()
 
 if options.json != None:
+   import json
    json_queue = queue.Queue()
    json_writer_worker = threading.Thread(target=json_writer)
    json_writer_worker.daemon = True
    json_writer_worker.start()
+
+if options.sqlite != None:
+   import sqlite3
+   sqlite_queue = queue.Queue()
+   sqlite_writer_worker = threading.Thread(target=sqlite_writer)
+   sqlite_writer_worker.daemon = True
+   sqlite_writer_worker.start()
 
 worker1 = threading.Thread(target=worker)
 worker1.daemon = True
