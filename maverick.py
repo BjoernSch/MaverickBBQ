@@ -35,6 +35,7 @@ parser = argparse.ArgumentParser(description='Receives Wireless BBQ Thermometer 
 parser.add_argument('--html', nargs='?', const='maverick.html', help='Writes a HTML file')
 parser.add_argument('--json', nargs='?', const='maverick.json', help='Writes a JSON file')
 parser.add_argument('--sqlite', nargs='?', const='maverick.sqlite', help='Writes to an SQLite Database')
+parser.add_argument('--thingspeak', nargs='?', const='maverick.thingspeak', help='Writes to ThingSpeak (enter Write-API key)')
 parser.add_argument('--debug', action='store_true', help='Generates additional debugging Output')
 parser.add_argument('--pin', default=4, type=int, help='Sets the Pin number')
 parser.add_argument('--nosync', action='store_true', help='Always register new IDs')
@@ -56,7 +57,7 @@ bit = 0
 # Queue für fertige Pakete
 packet_queue = queue.Queue()
 
-# Liste der Sender
+# Liste der Sender für die Synchronisierung
 unit_list = {}
 
 def get_state (bitlist):
@@ -196,7 +197,7 @@ def pinchange(gpio, level, tick):
       # lange Ruhe = vermutlich Preamble
       if duration > 4000:
          state = 'preamble'
-   # preamble heißt es könnte losgehen, wird nicht gr0ßartig geprüft
+   # preamble heißt es könnte losgehen, wird nicht großartig geprüft
    elif state == 'preamble':
       if (400 < duration < 600):
          state = 'data'
@@ -262,6 +263,8 @@ def updated(id, state, timestamp):
          return False
 
 def worker():
+   if options.verbose:
+      print('Main task running')
    # Hauptthread, wertet empfangene Pakete aus und verteilt an die anderen Queues
    global unit_list
    if options.fahrenheit:
@@ -280,6 +283,8 @@ def worker():
             json_queue.put((item_time, chksum_is, type, temp1, temp2))
          if options.sqlite != None:
             sqlite_queue.put((item_time, chksum_is, type, temp1, temp2))
+         if options.thingspeak != None:
+            thingspeak_queue.put((item_time, chksum_is, type, temp1, temp2))
          if options.verbose:
             print(time.strftime('%c:',time.localtime(item_time)),type, '-', chksum_is, '- Temperatur 1:', temp1, unit, 'Temperatur 2:', temp2, unit)
          if options.debug:
@@ -289,6 +294,8 @@ def worker():
 
 def json_writer():
    # schreibt ein JSON-Logfile
+   if options.verbose:
+       print('Starting JSON writer Task')
    json_file = open(options.json, 'a')
    if options.fahrenheit:
       unit = 'F'
@@ -303,6 +310,8 @@ def json_writer():
 
 def html_writer():
    # schreibt eine HTML-Datei (ohne Header und Footer)
+   if options.verbose:
+       print('Starting HTML writer Task')
    html_file = open(options.html, 'a')
    if options.fahrenheit:
       unit = 'F'
@@ -316,6 +325,8 @@ def html_writer():
 
 def sqlite_writer():
    # speichert die Empfangenen Daten in eine SQlite Datei
+   if options.verbose:
+       print('Starting SQLite writer Task')
    sqlite_conn = sqlite3.connect(options.sqlite)
    sqlite_c = sqlite_conn.cursor()
    sqlite_c.execute('''CREATE TABLE IF NOT EXISTS maverick
@@ -325,6 +336,85 @@ def sqlite_writer():
       sqlite_c.execute("INSERT INTO maverick VALUES (?, ?, ?, ?, ?)", (int(item_time), type,  chksum_is, temp1, temp2))
       sqlite_conn.commit()
       sqlite_queue.task_done()
+
+def thingspeak_writer():
+    global options
+    # postet die Daten auf Thingspeak
+    unit_list = {}
+    if options.verbose:
+        print('Starting ThingSpeak writer Task')
+    while True:
+        queueempty = False
+        # Bei neuen Daten sofort senden, ansonsten nach 15s (Mindestintervall, anonsten werden die gesendeten Daten ignoriert
+        try:
+            item_time, chksum_is, type, temp1, temp2 = thingspeak_queue.get(True, 15)
+        except queue.Empty:
+            queueempty = True
+        # Neue Daten verarbeiten
+        # Es werden maximal 4 Empfänger mit je 2 Kanälen unterstützt, da ThingSpeak 8 Kanäle (Felder) unterstützt
+        if not queueempty:
+            id = 4
+            if chksum_is in unit_list:
+                if options.verbose:
+                    print('Unit in List')
+                unit_list[chksum_is]['timestamp'] = int(item_time)
+                unit_list[chksum_is]['temp1'] = temp1
+                unit_list[chksum_is]['temp2'] = temp2
+                id = unit_list[chksum_is]['id']
+            else:
+                if len(unit_list) >= 4:
+                    if options.verbose:
+                        print('Maximum Number of Unit reached')
+                    maxage = int(time.time() - 20)
+                    oldestage = time.time()
+                    oldestchksum = 0
+                    for chksum, unit in unit_list.items():
+                        if unit['timestamp'] <= maxage and unit['timestamp'] < oldestage:
+                            oldestchksum = chksum
+                            oldestage = unit['timestamp']
+                            id = unit['id']
+                    if oldestchksum != 0:
+                        del unit_list[oldestchksum]
+                    else:
+                        print('All Slots in use, ignoring Device ', chksum_is)
+                        continue 
+                else:
+                    if options.verbose:
+                        print('Adding Unit to List')
+                    slots = list(range(4))
+                    for chksum, unit in unit_list.items():
+                        slots.remove(unit['id'])
+                    id = slots[0]
+                unit_list[chksum_is] = {'timestamp': int(item_time), 'id': id, 'temp1': temp1, 'temp2': temp2}
+        # Keine neuen Daten empfangen, damit nichts verloren geht trotzdem in den letzten 30s empfangene Daten senden
+        else:
+            if options.verbose:
+                print('Nothing new received')
+        status = ''
+        fields = {}
+        tosend = False
+        # Welche Sender wurden in den letzten 30s empfangen
+        for chksum, unit in unit_list.items():
+            if unit['timestamp'] >= time.time() - 30:
+                tosend = True
+                fields.update({'field' + str(unit['id']*2+1): unit['temp1'], 'field' + str(unit['id']*2+2): unit['temp2']})
+            # Im Statusfeld wird ein Zuordnung der Kanäle zu den Sendern übermittelt
+            status += str(unit['id']*2+1) + '/' + str(unit['id']*2+2) + ':' + str(chksum) + ' '
+        if options.verbose:
+            print('Statusstring: ', status)
+        data = {'api_key':options.thingspeak, 'status': status}
+        data.update(fields)
+        params = urllib.parse.urlencode(data)
+        params = params.encode('utf-8')
+        headers = {"Content-type": "application/x-www-form-urlencoded","Accept": "text/plain"}
+        request = urllib.request.Request('http://api.thingspeak.com/update', params, headers)
+        # Wenn Daten vorliegen, senden
+        if tosend:
+            if options.verbose:
+                print('Sending to ThingSpeak')
+            with urllib.request.urlopen(request) as response:
+                pass
+                #TODO Fehlerhandling
 
 pi = pigpio.pi() # connect to local Pi
 oldtick = pi.get_current_tick()
@@ -351,6 +441,14 @@ if options.sqlite != None:
    sqlite_writer_worker = threading.Thread(target=sqlite_writer)
    sqlite_writer_worker.daemon = True
    sqlite_writer_worker.start()
+
+if options.thingspeak != None:
+    import urllib.request
+    import urllib.parse
+    thingspeak_queue = queue.Queue()
+    thingspeak_writer_worker = threading.Thread(target=thingspeak_writer)
+    thingspeak_writer_worker.daemon = True
+    thingspeak_writer_worker.start()
 
 worker1 = threading.Thread(target=worker)
 worker1.daemon = True
