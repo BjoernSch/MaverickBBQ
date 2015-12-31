@@ -188,58 +188,58 @@ def pinchange(gpio, level, tick):
 
    duration = tick - oldtick
    oldtick = tick
-
-   if options.debug:
-      print(duration, level)
-
-   # wait ist der Wartestatus
-   if state == 'wait' and level == 1:
-      # lange Ruhe = vermutlich Preamble
-      if duration > 4000:
-         state = 'preamble'
-   # preamble heißt es könnte losgehen, wird nicht großartig geprüft
-   elif state == 'preamble':
-      if (400 < duration < 600):
-         state = 'data'
-         bit = 1
-         packet[:] = []
-         packet.append(1)
-         packet.append(0)
-      elif (200 < duration < 300):
-         state = 'preamble'
-      else:
-         state = 'wait'
-   elif state == 'data':
-      if level == 0:
-      # level == 0 heisst, es wurde ein HIGH-Impuls ausgewertet
-         if (200 < duration < 300):
-            # kurzer LOW = 0 wiederholt
-            if bit == 0:
-               packet.append(0)
-         elif (400 < duration < 600):
-            # langes LOW = 0
-            packet.append(0)
-            bit = 0
-         else:
-            # ungueltige Zeit
-            state = 'wait'
-      else:
-         if (200 < duration < 300):
-            # kurzer HIGH = 1 wiederholt
-            if bit == 1:
-               packet.append(1)
-         elif (400 < duration < 600):
-            # langes HIGH = 1
-            packet.append(1)
-            bit = 1
-         else:
-            # ungueltige Zeit
-            state = 'wait'
-   if len(packet) == 104:
-      # komplettes Paket empfangen
-      state = 'wait'
-      packet_queue.put((time.time(),list(packet)))
-      packet[:] = []
+   if duration >= 200:
+       if options.debug:
+          print(duration, level)
+   
+       # wait ist der Wartestatus
+       if state == 'wait' and level == 1:
+          # lange Ruhe = vermutlich Preamble
+          if duration > 4000:
+             state = 'preamble'
+       # preamble heißt es könnte losgehen, wird nicht großartig geprüft
+       elif state == 'preamble':
+          if (400 < duration < 600):
+             state = 'data'
+             bit = 1
+             packet[:] = []
+             packet.append(1)
+             packet.append(0)
+          elif (200 < duration < 300):
+             state = 'preamble'
+          else:
+             state = 'wait'
+       elif state == 'data':
+          if level == 0:
+          # level == 0 heisst, es wurde ein HIGH-Impuls ausgewertet
+             if (200 < duration < 300):
+                # kurzer LOW = 0 wiederholt
+                if bit == 0:
+                   packet.append(0)
+             elif (400 < duration < 600):
+                # langes LOW = 0
+                packet.append(0)
+                bit = 0
+             else:
+                # ungueltige Zeit
+                state = 'wait'
+          else:
+             if (200 < duration < 300):
+                # kurzer HIGH = 1 wiederholt
+                if bit == 1:
+                   packet.append(1)
+             elif (400 < duration < 600):
+                # langes HIGH = 1
+                packet.append(1)
+                bit = 1
+             else:
+                # ungueltige Zeit
+                state = 'wait'
+       if len(packet) == 104:
+          # komplettes Paket empfangen
+          state = 'wait'
+          packet_queue.put((time.time(),list(packet)))
+          packet[:] = []
 
 def updated(id, state, timestamp):
    # Prüft ob in den letzten 5s ein Paket vom gleichen Sender empfangen wurde
@@ -419,6 +419,7 @@ def thingspeak_writer():
 pi = pigpio.pi() # connect to local Pi
 oldtick = pi.get_current_tick()
 pi.set_mode(options.pin, pigpio.INPUT)
+pi.set_noise_filter(options.pin, 4500, 100000)
 callback1 = pi.callback(4, pigpio.EITHER_EDGE, pinchange)
 start = time.time()
 
