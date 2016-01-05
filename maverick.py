@@ -420,7 +420,7 @@ pi = pigpio.pi() # connect to local Pi
 oldtick = pi.get_current_tick()
 pi.set_mode(options.pin, pigpio.INPUT)
 pi.set_noise_filter(options.pin, 4500, 100000)
-callback1 = pi.callback(4, pigpio.EITHER_EDGE, pinchange)
+callback1 = pi.callback(options.pin, pigpio.EITHER_EDGE, pinchange)
 start = time.time()
 
 if options.html != None:
