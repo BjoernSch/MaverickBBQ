@@ -5,8 +5,9 @@
 # Receives Wireless BBQ Thermometer Telegrams via RF-Receiver
 #
 # (c) Martin Raatz, 2016
-# Changed from fix offset to calculating the min and max length of the pulses based on level
-# Checksum is same on et 732 and 733
+# Changed from fix offset to calculating the min and max length of the pulses based on Header AA99
+# the pulswidth changes with every transmission on my ET733
+# Checksum is same on ET732 and 733
 #
 # (c) Björn Schrader, 2015
 # Code based on
