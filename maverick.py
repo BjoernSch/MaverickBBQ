@@ -37,6 +37,7 @@ import copy
 import queue
 import threading
 import math
+import random
 
 parser = argparse.ArgumentParser(description='Receives Wireless BBQ Thermometer Telegrams via RF-Receiver')
 parser.add_argument('--html', nargs='?', const='maverick.html', help='Writes a HTML file')
@@ -480,12 +481,7 @@ def json_writer():
    while True:
       item_time, chksum_is, type, temp1, temp2 =  json_queue.get()
       set = {'time': item_time, 'checksum': chksum_is, 'type' : type, 'unit': unit, 'temperature_1' : temp1, 'temperature_2' : temp2}
-      print(set)
       if options.noappend:
-        with open(options.json, 'a') as json_file:
-            json_file.write(json.dumps(set))
-            json_file.flush()
-      else:
         tmp_filename = get_random_filename(options.json)
         with open(tmp_filename, 'w') as json_file:
             json_file.write(json.dumps(set))
@@ -493,6 +489,11 @@ def json_writer():
             os.fsync(json_file.fileno())
             json_file.close()
             os.rename(tmp_filename, options.json)
+      else:
+        with open(options.json, 'a') as json_file:
+            json_file.write(json.dumps(set) + ',')
+            json_file.flush()
+
       json_queue.task_done()
 
 def html_writer():
