@@ -38,6 +38,8 @@ import queue
 import threading
 import math
 import random
+import string
+import os
 
 parser = argparse.ArgumentParser(description='Receives Wireless BBQ Thermometer Telegrams via RF-Receiver')
 parser.add_argument('--html', nargs='?', const='maverick.html', help='Writes a HTML file')
