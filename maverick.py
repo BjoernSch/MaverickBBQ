@@ -44,9 +44,10 @@ parser.add_argument('--json', nargs='?', const='maverick.json', help='Writes a J
 parser.add_argument('--sqlite', nargs='?', const='maverick.sqlite', help='Writes to an SQLite Database')
 parser.add_argument('--thingspeak', nargs='?', const='maverick.thingspeak', help='Writes to ThingSpeak (enter Write-API key)')
 parser.add_argument('--debug', action='store_true', help='Generates additional debugging Output')
-parser.add_argument('--pin', default=18, type=int, help='Sets the Pin number')
+parser.add_argument('--pin', default=22, type=int, help='Sets the Pin number')
 parser.add_argument('--nosync', action='store_true', help='Always register new IDs')
 parser.add_argument('--fahrenheit', action='store_true', help='Sets the Output to Fahrenheit')
+parser.add_argument('--noappend', action='store_true', help='Don´t append to file')
 parser.add_argument('--verbose', action='store_true', help='Print more Information to stdout')
 
 options = parser.parse_args()
@@ -160,7 +161,7 @@ def chksum(bitlist):
 #       if  bitlist[24*4:(24*4)+4] == [0,0,1,0]:
 #          chksum |= 0x02
 #    else:
-#       type = 'et732'
+   type = 'et732'
    chksum  |= 0xFFFF & quart(bitlist[24*4:(24*4)+4]) << 2
    chksum  |= 0xFFFF & quart(bitlist[25*4:(25*4)+4])
 
@@ -197,6 +198,7 @@ def pinchange(gpio, level, tick):
    # Interruptroutine
    # wertet das Funksignal aus
    global oldtick
+   global oldlevel
    global state
    global packet
    global bit
@@ -220,6 +222,7 @@ def pinchange(gpio, level, tick):
       oldlevel = level
    elif oldlevel == level:
       print('\nLost_Tick!')
+   oldlevel = level
    duration = tick - oldtick
    oldtick = tick
    if duration >= 70:
@@ -433,6 +436,9 @@ def updated(id, state, timestamp):
       else:
          return False
 
+def get_random_filename(filename):
+    return filename + '_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(12))
+    
 def worker():
    if options.verbose:
       print('Main task running')
@@ -467,16 +473,26 @@ def json_writer():
    # schreibt ein JSON-Logfile
    if options.verbose:
        print('Starting JSON writer Task')
-   json_file = open(options.json, 'a')
    if options.fahrenheit:
-      unit = 'F'
+      unit = '° F'
    else:
       unit = '°C'
    while True:
       item_time, chksum_is, type, temp1, temp2 =  json_queue.get()
       set = {'time': item_time, 'checksum': chksum_is, 'type' : type, 'unit': unit, 'temperature_1' : temp1, 'temperature_2' : temp2}
-      json_file.write(json.dumps(set) + ',')
-      json_file.flush()
+      print(set)
+      if options.noappend:
+        with open(options.json, 'a') as json_file:
+            json_file.write(json.dumps(set))
+            json_file.flush()
+      else:
+        tmp_filename = get_random_filename(options.json)
+        with open(tmp_filename, 'w') as json_file:
+            json_file.write(json.dumps(set))
+            json_file.flush()
+            os.fsync(json_file.fileno())
+            json_file.close()
+            os.rename(tmp_filename, options.json)
       json_queue.task_done()
 
 def html_writer():
