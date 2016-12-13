@@ -55,7 +55,8 @@ if options.debug:
    print(options)
 
 # Globals für die Pinchange-Routine
-oldtick=0
+oldtick = 0
+oldlevel = None
 state = 'wait'
 packet = []
 bit = 0
@@ -215,7 +216,10 @@ def pinchange(gpio, level, tick):
    global short_high_max
    global short_low_max
 
-
+   if oldlevel is None:
+      oldlevel = level
+   elif oldlevel == level:
+      print('\nLost_Tick!')
    duration = tick - oldtick
    oldtick = tick
    if duration >= 70:
@@ -291,103 +295,39 @@ def pinchange(gpio, level, tick):
                  print('train',traincount, flush=True)
              #L h   L l   L h   L l   L h   L l   L h   L l   S h   S l   L h   S l   S h   L l   S h   S l   L h
              # 2     3     4     5     6     7     8     9     10    11    12    13    14    15    16    17    18
-             if traincount == 2:
-                 long_high = duration
-                 long_high_min = duration
-                 long_high_max = duration
-             elif traincount == 3:
-                 long_low += duration
-                 if long_low_min > duration :
-                     long_low_min = duration
-                 if long_low_max < duration :
-                     long_low_min = duration
-             elif traincount == 4:
+             if traincount in (2, 4, 6, 8, 12, 18):
+                # Long high
                  long_high += duration
                  if long_high_min > duration :
                      long_high_min = duration
                  if long_high_max < duration :
                      long_high_min = duration
-             elif traincount == 5:
+             elif traincount in (3, 5, 7, 9, 15):
                  long_low += duration
                  if long_low_min > duration :
                      long_low_min = duration
                  if long_low_max < duration :
                      long_low_min = duration
-             elif traincount == 6:
-                 long_high += duration
-                 if long_high_min > duration :
-                     long_high_min = duration
-                 if long_high_max < duration :
-                     long_high_min = duration
-             elif traincount == 7:
-                 long_low += duration
-                 if long_low_min > duration :
-                     long_low_min = duration
-                 if long_low_max < duration :
-                     long_low_min = duration
-             elif traincount == 8:
-                 long_high += duration
-                 if long_high_min > duration :
-                     long_high_min = duration
-                 if long_high_max < duration :
-                     long_high_min = duration
-             elif traincount == 9:
-                 long_low += duration
-                 if long_low_min > duration :
-                     long_low_min = duration
-                 if long_low_max < duration :
-                     long_low_min = duration
-             elif traincount == 10:
-                 short_high = duration
-                 short_high_min = duration
-                 short_high_max = duration
-             elif traincount == 11:
-                 short_low = duration
-                 short_low_min = duration
-                 short_low_max = duration
-             elif traincount == 12:
-                 long_high += duration
-                 if long_low_min > duration :
-                     long_low_min = duration
-                 if long_low_max < duration :
-                     long_low_min = duration
-             elif traincount == 13:
-                 short_low += duration
-                 if short_low_min > duration :
-                     short_low_min = duration
-                 if short_low_max < duration :
-                     short_low_min = duration
-             elif traincount == 14:
+             elif traincount in (10, 14, 16) :
                  short_high += duration
                  if short_high_min > duration :
                      short_high_min = duration
                  if short_high_max < duration :
                      short_high_min = duration
-             elif traincount == 15:
-                 long_low += duration
-                 if long_low_min > duration :
-                     long_low_min = duration
-                 if long_low_max < duration :
-                     long_low_min = duration
-             elif traincount == 16:
-                 short_high += duration
-                 if short_high_min > duration :
-                     short_high_min = duration
-                 if short_high_max < duration :
-                     short_high_min = duration
-             elif traincount == 17:
+             elif traincount in (11, 13, 17):
                  short_low += duration
                  if short_low_min > duration :
                      short_low_min = duration
                  if short_low_max < duration :
                      short_low_min = duration
-             elif traincount == 18:
-                 long_high += duration
+                     
+             if traincount == 18:
                  long_high /= 6
                  long_low /= 6
                  short_high /= 3
                  short_low /= 3
                  state = 'data'
+                 
                  if long_high_min > long_high*0.75 :
                      long_high_min = long_high*0.75
                  if long_low_min > long_low*0.75 :
@@ -422,6 +362,7 @@ def pinchange(gpio, level, tick):
                      print('long_low',round(long_low),"min",long_low_min,"max",long_low_max, flush=False)
                      print('short_low',round(short_low),"min",short_low_min,"max",short_low_max, flush=False)
                      print('data', flush=True)
+                     
        elif state == 'data':
           if level == 0:
           # level == 0 heisst, es wurde ein HIGH-Impuls ausgewertet
