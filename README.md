@@ -1,6 +1,9 @@
 # MaverickBBQ
 Receives Wireless BBQ Thermometer Telegrams via RF-Receiver attached to Raspberry Pi
 
+For further development, see:
+https://github.com/WLANThermo/WLANThermo_v2/blob/master/software/usr/bin/maverick.py
+
 Needs pigpiod (http://abyz.co.uk/rpi/pigpio/pigpiod.html) running to work
 start with: pigpiod -x -1
 
